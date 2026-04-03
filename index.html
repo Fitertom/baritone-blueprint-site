@@ -2612,6 +2612,30 @@ body[data-theme="liquify"] .vars-list .var-mini:hover {
   border-color: rgba(143, 208, 255, 0.42) !important;
   box-shadow: 0 0 0 2px rgba(143, 208, 255, 0.14) !important;
 }
+
+/* Liquify: unify right-click menu sections and submenu */
+body[data-theme="liquify"] .ctx-section-hdr {
+  background: linear-gradient(150deg, rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0.02)) !important;
+  border: 1px solid rgba(205, 224, 255, 0.16) !important;
+  border-radius: 12px !important;
+  color: var(--text2) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+body[data-theme="liquify"] .ctx-section:hover .ctx-section-hdr {
+  border-color: rgba(143, 208, 255, 0.32) !important;
+  color: var(--text) !important;
+}
+
+body[data-theme="liquify"] .ctx-section-body {
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03)) !important;
+  border: 1px solid rgba(205, 224, 255, 0.20) !important;
+  border-radius: 14px !important;
+  box-shadow: var(--shadow-lg) !important;
+  backdrop-filter: blur(10px) saturate(145%) !important;
+  -webkit-backdrop-filter: blur(10px) saturate(145%) !important;
+  padding: 8px !important;
+}
 </style>
 
 </head>
@@ -21431,7 +21455,7 @@ const liquifyEngine = (() => {
   const selectors = [
     '.theme-picker', '.theme-toggle', '.theme-menu', '.theme-item',
     '.workspace-tabs', '.sidebar', '.right-panel', '.zoom-controls',
-    '.ctx', '.block-modal', '.node-info-modal',
+    '.ctx', '.ctx-section-hdr', '.ctx-section-body', '.block-modal', '.node-info-modal',
     '.node', '.node-tpl', '.var-item', '.bm-item'
   ];
 
