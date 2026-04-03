@@ -17684,6 +17684,9 @@ let groupCounter = 0;
 let workspaces = {};
 let currentWorkspaceId = 'root';
 let openWorkspaceTabs = ['root'];
+const RESC_AUTOSAVE_KEY = 'baritoneBlueprintLastRescV1';
+let rescAutosaveTimer = null;
+let suppressRescAutosave = false;
 
 
 
@@ -20808,6 +20811,101 @@ function updatePreview() {
 
   }).join('\n');
 
+  scheduleRescAutosave();
+
+}
+
+function collectRescSnapshot() {
+  saveCurrentWorkspaceState();
+  syncRootWorkspacePointers();
+  return {
+    nodes: workspaces.root?.nodes || nodes,
+    connections: workspaces.root?.connections || connections,
+    workspaces,
+    currentWorkspaceId: 'root',
+    openWorkspaceTabs: ['root'],
+    groupCounter,
+    variables, variableCounter,
+    viewport: { x: canvasOffX, y: canvasOffY, scale: canvasScale },
+    counters: { node: nodeCounter, conn: connCounter },
+    savedAt: Date.now()
+  };
+}
+
+function scheduleRescAutosave() {
+  if (suppressRescAutosave) return;
+  if (rescAutosaveTimer) clearTimeout(rescAutosaveTimer);
+  rescAutosaveTimer = setTimeout(() => {
+    try {
+      localStorage.setItem(RESC_AUTOSAVE_KEY, JSON.stringify(collectRescSnapshot()));
+    } catch (_) {
+      // Ignore quota or storage errors silently
+    }
+  }, 350);
+}
+
+function applyRescData(data, options = {}) {
+  const toastOnSuccess = options.toastOnSuccess !== false;
+  suppressRescAutosave = true;
+  try {
+    clearAll();
+
+    workspaces = data.workspaces && typeof data.workspaces === 'object' ? data.workspaces : {};
+    if (!workspaces.root) {
+      workspaces.root = {
+        id: 'root',
+        name: 'Root',
+        nodes: data.nodes || [],
+        connections: data.connections || [],
+        kind: 'root'
+      };
+    }
+    nodes = workspaces.root.nodes || [];
+    connections = workspaces.root.connections || [];
+    currentWorkspaceId = 'root';
+    openWorkspaceTabs = ['root'];
+    groupCounter = data.groupCounter || 0;
+    variables = data.variables || [];
+    variableCounter = data.variableCounter || variables.length;
+    nodeCounter = data.counters?.node || 0;
+    connCounter = data.counters?.conn || 0;
+
+    if (data.viewport) {
+      canvasOffX = data.viewport.x || 0;
+      canvasOffY = data.viewport.y || 0;
+      canvasScale = data.viewport.scale || 1;
+      applyTransform();
+    }
+
+    repairLegacyGroupLinks();
+    sanitizeGroupWorkspaces();
+    renderWorkspaceTabs();
+    nodes.forEach(n => renderNode(n));
+    buildVariablesPanel();
+    refreshIndices();
+    updateDropHint();
+    updatePreview();
+    redrawWires();
+
+    if (toastOnSuccess) toast('Проект загружен! 📂');
+  } finally {
+    suppressRescAutosave = false;
+    scheduleRescAutosave();
+  }
+}
+
+function loadRescAutosaveOnBoot() {
+  try {
+    const raw = localStorage.getItem(RESC_AUTOSAVE_KEY);
+    if (!raw) return false;
+    const data = JSON.parse(raw);
+    if (!data || typeof data !== 'object') return false;
+    if (!data.workspaces && !Array.isArray(data.nodes)) return false;
+    applyRescData(data, { toastOnSuccess: false });
+    return true;
+  } catch (_) {
+    return false;
+  }
 }
 
 
@@ -20858,25 +20956,7 @@ async function copyScriptToClipboard() {
 }
 
 function exportResc() {
-
-  saveCurrentWorkspaceState();
-  syncRootWorkspacePointers();
-
-  const data = JSON.stringify({
-
-    nodes: workspaces.root?.nodes || nodes,
-    connections: workspaces.root?.connections || connections,
-    workspaces,
-    currentWorkspaceId: 'root',
-    openWorkspaceTabs: ['root'],
-    groupCounter,
-    variables, variableCounter,
-
-    viewport: { x: canvasOffX, y: canvasOffY, scale: canvasScale },
-
-    counters: { node: nodeCounter, conn: connCounter }
-
-  });
+  const data = JSON.stringify(collectRescSnapshot());
 
   const blob = new Blob([data], {type:'application/json'});
 
@@ -20909,56 +20989,7 @@ function handleFileImport(input) {
       try {
 
         const data = JSON.parse(e.target.result);
-
-        clearAll();
-
-        workspaces = data.workspaces && typeof data.workspaces === 'object' ? data.workspaces : {};
-        if (!workspaces.root) {
-          workspaces.root = {
-            id: 'root',
-            name: 'Root',
-            nodes: data.nodes || [],
-            connections: data.connections || [],
-            kind: 'root'
-          };
-        }
-        nodes = workspaces.root.nodes || [];
-        connections = workspaces.root.connections || [];
-        currentWorkspaceId = 'root';
-        openWorkspaceTabs = ['root'];
-        groupCounter = data.groupCounter || 0;
-        variables = data.variables || [];
-        variableCounter = data.variableCounter || variables.length;
-
-        nodeCounter = data.counters?.node || 0;
-
-        connCounter = data.counters?.conn || 0;
-
-        if (data.viewport) {
-
-          canvasOffX = data.viewport.x || 0;
-
-          canvasOffY = data.viewport.y || 0;
-
-          canvasScale = data.viewport.scale || 1;
-
-          applyTransform();
-
-        }
-
-        repairLegacyGroupLinks();
-        sanitizeGroupWorkspaces();
-        renderWorkspaceTabs();
-        nodes.forEach(n => renderNode(n));
-        buildVariablesPanel();
-
-        refreshIndices();
-
-        updatePreview();
-
-        redrawWires();
-
-        toast('Проект загружен! 📂');
+        applyRescData(data, { toastOnSuccess: true });
 
       } catch (err) {
 
@@ -21747,33 +21778,25 @@ currentWorkspaceId = 'root';
 openWorkspaceTabs = ['root'];
 renderWorkspaceTabs();
 
-updatePreview();
+const restoredFromAutosave = loadRescAutosaveOnBoot();
+if (!restoredFromAutosave) {
+  updatePreview();
 
-// Auto-create permanent START node
+  // Auto-create permanent START node
+  const _startNode = addNode('START', 340, 60);
 
-const _startNode = addNode('START', 340, 60);
-
-// Make START node visually distinct and lock it
-
-(function() {
-
-  const el = document.getElementById(`node-${_startNode.id}`);
-
-  if (el) {
-
-    el.style.background = 'linear-gradient(135deg, rgba(52,199,89,0.25), rgba(0,122,255,0.18))';
-
-    el.style.borderColor = 'rgba(52,199,89,0.7)';
-
-    el.style.cursor = 'move';
-
-    el.querySelector('.nh-btn.del')?.remove();
-
-    el.querySelector('button[onclick*="dupNode"]')?.remove();
-
-  }
-
-})();
+  // Make START node visually distinct and lock it
+  (function() {
+    const el = document.getElementById(`node-${_startNode.id}`);
+    if (el) {
+      el.style.background = 'linear-gradient(135deg, rgba(52,199,89,0.25), rgba(0,122,255,0.18))';
+      el.style.borderColor = 'rgba(52,199,89,0.7)';
+      el.style.cursor = 'move';
+      el.querySelector('.nh-btn.del')?.remove();
+      el.querySelector('button[onclick*="dupNode"]')?.remove();
+    }
+  })();
+}
 
 updateDropHint();
 </script>
